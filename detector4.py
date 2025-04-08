@@ -1,16 +1,21 @@
 import os
+import ast
+import csv
+from datetime import datetime
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from pydantic import BaseModel
-from langchain.chat_models import ChatOpenAI
+from langchain_openai import ChatOpenAI
 from langchain_community.tools.tavily_search import TavilySearchResults
 
+# Load environment variables
 load_dotenv()
 
-# Agents (Personas)
+# Initialize LLM and tools
 llm = ChatOpenAI(model="gpt-4", temperature=0.2)
 search_tool = TavilySearchResults()
 
+# FastAPI app
 app = FastAPI()
 
 # --- Config ---
@@ -33,9 +38,13 @@ LOCATION_DOMAINS = {
     "default": []
 }
 
+LOG_FILE = "logs.csv"
+
+
 # --- Request Schema ---
 class ArticleInput(BaseModel):
     article: str
+
 
 # --- The Extractor ---
 def extract_keywords(article: str):
@@ -43,11 +52,23 @@ def extract_keywords(article: str):
     You are 'The Extractor'. Your job is to extract 5 to 10 factual claims or key phrases from the following article that need fact-checking.
     These should be short, precise, and suitable to be used as search queries.
 
+    Return a Python list of strings. If the article has no valid facts to check, return an empty list: []
+
     Article:
+    {article}
     """
-    article = article.strip()
-    response = llm.predict(prompt + article)
-    return eval(response.strip())
+    response = llm.predict(prompt).strip()
+
+    try:
+        keywords = ast.literal_eval(response)
+        if not isinstance(keywords, list):
+            raise ValueError("Not a list")
+        return keywords
+    except Exception as e:
+        print("❌ Keyword extraction failed:", e)
+        print("LLM returned:", response)
+        return []
+
 
 # --- The Strategist ---
 def choose_domains(keywords, article):
@@ -65,14 +86,13 @@ def choose_domains(keywords, article):
         """
         response = llm.predict(prompt).strip().lower()
         try:
-            category, region = eval(response)
+            category, region = ast.literal_eval(response)
         except:
             category, region = "general", "default"
 
         category_domains = TRUSTED_DOMAINS.get(category, TRUSTED_DOMAINS["general"])
         location_domains = LOCATION_DOMAINS.get(region, [])
 
-        # New adjusted strategy
         if category != "general" and region == "default":
             domains = category_domains[:2]
         elif region != "default" and category == "general":
@@ -85,6 +105,7 @@ def choose_domains(keywords, article):
         domain_map.append((keyword, list(dict.fromkeys(domains))))
     return domain_map
 
+
 # --- The Scout ---
 def search_tavily(keyword: str, domains: list):
     joined_domains = " OR ".join([f"site:{d}" for d in domains])
@@ -92,6 +113,7 @@ def search_tavily(keyword: str, domains: list):
     print(f"\n🔍 Searching for: {search_query}")
     result = search_tool.run(search_query)
     return result
+
 
 # --- The Judge ---
 def judge_realness(article, keywords, search_data):
@@ -114,15 +136,53 @@ Your job:
 - Give a clear justification explaining any partial truth, contradictions, or factual alignment.
 
 Return a well-formatted JSON with:
-{
+{{
   "score": <integer from 0 (completely real) to 100 (completely fake)>,
   "justification": "<detailed reasoning including which claims were verified or contradicted>",
   "sources": ["<link1>", "<link2>", ...]
-}
+}}
 Be honest, analytical, and concise. Quote or rephrase facts where necessary.
 """
     response = llm.predict(prompt)
     return response
+
+
+# --- Logger ---
+def log_to_csv(article, keywords, domain_map, search_results, judgment):
+    headers = [
+        "timestamp", "article", "keywords", "domain_map",
+        "search_results", "score", "justification", "sources"
+    ]
+
+    write_headers = not os.path.exists(LOG_FILE)
+
+    with open(LOG_FILE, mode='a', newline='', encoding='utf-8') as file:
+        writer = csv.DictWriter(file, fieldnames=headers)
+
+        if write_headers:
+            writer.writeheader()
+
+        row = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "article": article,
+            "keywords": str(keywords),
+            "domain_map": str(domain_map),
+            "search_results": str(search_results),
+        }
+
+        try:
+            judgment_dict = ast.literal_eval(judgment)
+            row.update({
+                "score": judgment_dict.get("score", ""),
+                "justification": judgment_dict.get("justification", ""),
+                "sources": str(judgment_dict.get("sources", [])),
+            })
+        except Exception as e:
+            print("⚠️ Logging warning: Could not parse judgment JSON")
+            row.update({"score": "", "justification": "", "sources": ""})
+
+        writer.writerow(row)
+
 
 # --- FastAPI Route ---
 @app.post("/detect")
@@ -131,6 +191,10 @@ async def detect_fake_news(payload: ArticleInput):
 
     # Step 1: The Extractor
     keywords = extract_keywords(article)
+    if not keywords:
+        return {
+            "error": "Could not extract valid keywords from the article. Please ensure the article contains factual claims or news-like content."
+        }
 
     # Step 2: The Strategist
     domain_map = choose_domains(keywords, article)
@@ -143,5 +207,8 @@ async def detect_fake_news(payload: ArticleInput):
 
     # Step 4: The Judge
     judgment = judge_realness(article, keywords, search_results)
+
+    # ✅ Log everything to CSV
+    log_to_csv(article, keywords, domain_map, search_results, judgment)
 
     return {"result": judgment}
