@@ -26,7 +26,7 @@ This project is an AI-powered Fake News Detection System built using FastAPI and
 ## Setup Instructions
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/your-username/fake-news-detector.git
+git clone https://github.com/danush189/fake-news-detector.git
 cd fake-news-detector
 ```
 ### 2. Create a virtual environment and install dependencies
