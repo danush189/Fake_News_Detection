@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrueLens - Fake News Detector</title>
+    <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/2598/2598793.png">
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f7f9fc;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: linear-gradient(to right, #2c3e50, #34495e);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 30px;
+        }
+
+        .logo-title {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logo-title img {
+            width: 50px;
+            height: 50px;
+        }
+
+        .tagline {
+            font-style: italic;
+            font-size: 14px;
+            margin: 4px 0 0 0;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        label {
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 200px;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 14px;
+            resize: vertical;
+            background-color: #fff;
+        }
+
+        .analysis-card {
+            background: linear-gradient(to right, #2c3e50, #34495e);
+            color: white;
+            padding: 25px;
+            border-radius: 10px;
+            margin-top: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .analysis-card h3 {
+            margin-bottom: 15px;
+            font-weight: 600;
+            font-size: 20px;
+            color: #ecf0f1;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #1abc9c;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            transition: background-color 0.3s;
+            max-width: 200px;
+            flex: 1;
+        }
+
+        button:hover {
+            background-color: #16a085;
+        }
+
+        .loading {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .results {
+            display: none;
+            padding: 20px;
+            border-radius: 10px;
+            background-color: #eaf6ff;
+            border-left: 8px solid #3498db;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+        }
+
+        .results h2 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+
+        .results ul {
+            padding-left: 20px;
+        }
+
+        .results a {
+            color: #2980b9;
+            text-decoration: none;
+        }
+
+        .results a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo-title">
+            <img src="https://cdn-icons-png.flaticon.com/512/2598/2598793.png" alt="Truth Logo">
+            <div>
+                <h2 style="margin: 0;">TrueLens</h2>
+                <p class="tagline">Fake news has nowhere to hide.</p>
+            </div>
+        </div>
+        <img src="https://cdn-icons-png.flaticon.com/512/3388/3388783.png" alt="Detector Icon" style="height: 40px;">
+    </header>
+
+    <div class="container">
+        <div>
+            <label for="article">Enter the news article to analyze:</label>
+            <textarea id="article" placeholder="Paste your article here..."></textarea>
+        </div>
+
+        <div class="analysis-card">
+            <h3>Choose an Analysis</h3>
+            <div class="button-group">
+                <button id="fact-check-btn">Fact Check</button>
+                <button id="bias-btn">Bias Analysis</button>
+                <button id="credibility-btn">Credibility Score</button>
+            </div>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            <p>Analyzing... This may take a minute.</p>
+        </div>
+
+        <div id="results" class="results"></div>
+    </div>
+
+    <script>
+        document.getElementById('fact-check-btn').addEventListener('click', async () => {
+            await performAnalysis('fact-check');
+        });
+
+        document.getElementById('bias-btn').addEventListener('click', async () => {
+            await performAnalysis('bias-analysis');
+        });
+
+        document.getElementById('credibility-btn').addEventListener('click', async () => {
+            await performAnalysis('credibility-score');
+        });
+
+        async function performAnalysis(endpoint) {
+            const article = document.getElementById('article').value;
+            if (!article.trim()) {
+                alert('Please enter an article to analyze.');
+                return;
+            }
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+
+            try {
+                const response = await fetch(`/${endpoint}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ article })
+                });
+
+                const data = await response.json();
+
+                document.getElementById('loading').style.display = 'none';
+                const resultsDiv = document.getElementById('results');
+                resultsDiv.style.display = 'block';
+
+                if (endpoint === 'credibility-score') {
+                    if (data.score !== undefined) {
+                        resultsDiv.innerHTML = `
+                            <h2>Credibility Analysis</h2>
+                            <h3>Score: ${data.score}/100 (higher = less credible)</h3>
+                            <div>
+                                <h3>Justification:</h3>
+                                <p>${data.justification}</p>
+                            </div>
+                            <div>
+                                <h3>Sources:</h3>
+                                <ul>
+                                    ${data.sources.map(source => `<li><a href="${source}" target="_blank">${source}</a></li>`).join('')}
+                                </ul>
+                            </div>
+                        `;
+                    } else {
+                        resultsDiv.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+                    }
+                } else {
+                    resultsDiv.innerHTML = `<div>${marked.parse(data.result)}</div>`;
+                }
+
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('results').style.display = 'block';
+                document.getElementById('results').innerHTML = `<p>Error: ${error.message}</p>`;
+            }
+        }
+    </script>
+
+    <!-- Markdown parser for pretty rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+</body>
+</html>
